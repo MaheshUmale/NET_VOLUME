@@ -23,7 +23,8 @@ def main():
             parser.error("--symbol is required for backtest mode.")
         run_backtest(symbol, args.from_date, args.to_date, auto_backfill=not args.no_backfill)
     elif args.mode == 'live':
-        asyncio.run(run_live())
+        from python_engine.live_polling import PollingLiveEngine
+        asyncio.run(PollingLiveEngine().start())
 
 if __name__ == "__main__":
     main()

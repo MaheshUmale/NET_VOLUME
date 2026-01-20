@@ -214,7 +214,7 @@ class IngestionManager:
                 pcr_velocity = round(pcr - prev_pcr, 4) if prev_pcr is not None else 0.0
                 prev_pcr = pcr
 
-                # Volume PCR Calculation
+                                # Volume PCR Calculation
                 total_call_vol = group['call_volume'].sum()
                 total_put_vol = group['put_volume'].sum()
                 vol_pcr = round(total_put_vol / total_call_vol, 4) if total_call_vol > 0 else 1.0
@@ -258,8 +258,7 @@ class IngestionManager:
                     'timestamp': ts_str, 'pcr': pcr, 'pcr_velocity': pcr_velocity,
                     'oi_wall_above': oi_wall_above, 'oi_wall_below': oi_wall_below,
                     'call_oi': total_call_oi, 'put_oi': total_put_oi,
-                    'smart_trend': market_trend, 'advances': 0, 'declines': 0,
-                    'volume_pcr': vol_pcr, 'net_vol_rsi': net_vol_rsi
+                    'smart_trend': market_trend, 'advances': 0, 'declines': 0, 'volume_pcr': vol_pcr, 'net_vol_rsi': net_vol_rsi
                 })
 
             if processed_snapshots:
