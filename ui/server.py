@@ -144,4 +144,5 @@ async def get_trades(symbol: str = None, date: str = None):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Port 3000 is required for live preview in this environment
+    uvicorn.run(app, host="0.0.0.0", port=3000)

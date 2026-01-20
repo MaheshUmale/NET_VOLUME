@@ -40,6 +40,7 @@ To view the chart and trade details:
 ## ⚙️ Quick Start
 
 1. Configure `config.json` with your Upstox access token.
-2. Run Live Engine: `python run.py --mode live`
-3. Launch UI: `python ui/server.py`
+2. Backfill Today's Data: `python backfill_today.py --symbol NIFTY`
+3. Run Live Engine: `python run.py --mode live`
+4. Launch UI: `python ui/server.py`
 
