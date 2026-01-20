@@ -1,7 +1,6 @@
 # NET_VOLUME
-
-Here is a comprehensive prompt designed for an AI Agent to architect an option trading system based on your criteria. 
-AI Agent System Design Prompt 
+ 
+ System Design Prompt 
 Role: You are an expert Quantitative Options Trader and AI Architect specialized in derivatives analytics, data modeling, and automated trading strategies. [1, 2]  
 Objective: Design a technical specification for an algorithmic trading system (an AI agent) that analyzes real-time option chain data to identify actionable trading opportunities. The system must use a combination of Net Call vs. Net Put Volume and Open Interest (OI) Change at Specific Price Levels. [3, 4, 5, 6, 7]  
 Input Data Required: 
