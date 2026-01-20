@@ -41,6 +41,8 @@ class TradingEngine:
         self.option_chain_handler = OptionChainHandler()
         self.pattern_matcher = PatternMatcherHandler(strategy_dir)
         self.execution_handler = ExecutionHandler(order_orchestrator, data_manager)
+        from python_engine.core.trend_oi_strategy_handler import TrendOIStrategyHandler
+        self.trend_oi_strategy = TrendOIStrategyHandler(order_orchestrator)
 
         # Sequential pipeline
         self.pipeline = [
@@ -48,6 +50,7 @@ class TradingEngine:
             self.option_chain_handler,
             self.sentiment_handler,
             self.pattern_matcher,
+            self.trend_oi_strategy,
             self.execution_handler
         ]
 

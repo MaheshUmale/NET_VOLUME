@@ -304,6 +304,7 @@ class DataManager:
     def get_current_sentiment(self, symbol, timestamp=None, mode='backtest'):
         pcr = self.get_pcr(symbol, timestamp=timestamp, mode=mode)
         oi_above, oi_below = 0.0, 0.0
+        chain = None
         try:
             full_symbol = "NSE_INDEX|Nifty 50" if "NIFTY" in symbol else "NSE_INDEX|Nifty Bank"
             chain = self.get_option_chain(full_symbol, mode=mode)
@@ -321,8 +322,20 @@ class DataManager:
             stats = self.db_manager.get_market_stats(symbol, date_str, pd.to_datetime(timestamp, unit='s').strftime('%Y-%m-%d %H:%M:%S'))
             if not stats.empty: smart_trend = stats.iloc[-1].get('smart_trend', 'Neutral')
         except Exception as e: pass
-        return Sentiment(pcr=pcr, advances=0, declines=0, pcr_velocity=0.0, oi_wall_above=oi_above, oi_wall_below=oi_below, smart_trend=smart_trend)
-
+        vol_pcr = 1.0
+        net_vol_rsi = 50.0
+        try:
+            if chain:
+                df = pd.DataFrame(chain)
+                total_call_vol = df['call_volume'].sum() if 'call_volume' in df.columns else 0
+                total_put_vol = df['put_volume'].sum() if 'put_volume' in df.columns else 0
+                vol_pcr = round(total_put_vol / total_call_vol, 4) if total_call_vol > 0 else 1.0
+                if timestamp:
+                    date_str = pd.to_datetime(timestamp, unit='s').strftime('%Y-%m-%d')
+                    stats = self.db_manager.get_market_stats(symbol, date_str, date_str)
+                    if not stats.empty: net_vol_rsi = stats.iloc[-1].get('net_vol_rsi', 50.0)
+        except Exception as e: pass
+        return Sentiment(pcr=pcr, advances=0, declines=0, pcr_velocity=0.0, oi_wall_above=oi_above, oi_wall_below=oi_below, smart_trend=smart_trend, volume_pcr=vol_pcr, net_vol_rsi=net_vol_rsi)
     def get_option_delta(self, instrument_key):
         """Returns the delta for the given option instrument key from the DB."""
         try:

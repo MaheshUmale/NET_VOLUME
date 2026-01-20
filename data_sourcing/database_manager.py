@@ -101,6 +101,8 @@ class DatabaseManager:
                     put_instrument_key TEXT,
                     call_oi REAL,
                     put_oi REAL,
+                    volume_pcr REAL,
+                    net_vol_rsi REAL,
                     call_ltp REAL,
                     put_ltp REAL,
                     call_volume INTEGER,
@@ -147,9 +149,9 @@ class DatabaseManager:
                     oi_wall_below REAL,
                     call_oi REAL,
                     put_oi REAL,
-                    smart_trend TEXT,
                     volume_pcr REAL,
                     net_vol_rsi REAL,
+                    smart_trend TEXT,
                     PRIMARY KEY (symbol, timestamp)
                 )
             ''', commit=True)
@@ -378,8 +380,10 @@ class DatabaseManager:
 
                     cols = ['symbol', 'timestamp', 'strike', 'expiry', 'call_oi_chg', 'put_oi_chg',
                             'call_instrument_key', 'put_instrument_key', 'call_oi', 'put_oi',
-                            'call_ltp', 'put_ltp', 'call_volume', 'put_volume', 'call_iv', 'put_iv',
-                            'call_delta', 'put_delta', 'call_theta', 'put_theta', 'call_trend', 'put_trend']
+                            'call_ltp', 'put_ltp', 'call_volume', 'put_volume',
+                            'call_instrument_key', 'put_instrument_key', 'call_oi', 'put_oi',
+                            'call_ltp', 'put_ltp', 'call_iv', 'put_iv', 'call_delta', 'put_delta',
+                            'call_theta', 'put_theta', 'call_trend', 'put_trend']
                     actual_cols = [c for c in cols if c in df_to_insert.columns]
 
                     # Compatible Upsert for option_chain_data
