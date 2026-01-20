@@ -56,6 +56,15 @@ class SymbolMaster:
             try:
                 with gzip.GzipFile(fileobj=io.BytesIO(content)) as f:
                     df = pd.read_json(f)
+
+                # Filter required columns to keep DB clean and avoid unnecessary null columns
+                keep_cols = [
+                    'instrument_key', 'trading_symbol', 'name', 'last_trading_date',
+                    'expiry', 'strike_price', 'tick_size', 'lot_size',
+                    'instrument_type', 'segment', 'exchange'
+                ]
+                df = df[[c for c in keep_cols if c in df.columns]]
+
                 self.db_manager.store_instrument_master(df)
                 self._populate_mappings(df)
                 self._initialized = True

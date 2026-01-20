@@ -88,7 +88,7 @@ class DatabaseManager:
                 )
             ''', commit=True)
 
-            # Create option_chain_data table
+            # Create option_chain_data table (removed redundant market-wide columns)
             self._execute_query('''
                 CREATE TABLE IF NOT EXISTS option_chain_data (
                     symbol TEXT,
@@ -101,8 +101,6 @@ class DatabaseManager:
                     put_instrument_key TEXT,
                     call_oi REAL,
                     put_oi REAL,
-                    volume_pcr REAL,
-                    net_vol_rsi REAL,
                     call_ltp REAL,
                     put_ltp REAL,
                     call_volume INTEGER,
@@ -122,10 +120,17 @@ class DatabaseManager:
             # Create instrument_master table
             self._execute_query('''
                 CREATE TABLE IF NOT EXISTS instrument_master (
-                    trading_symbol TEXT PRIMARY KEY,
-                    instrument_key TEXT,
+                    instrument_key TEXT PRIMARY KEY,
+                    trading_symbol TEXT,
+                    name TEXT,
+                    last_trading_date TEXT,
+                    expiry TEXT,
+                    strike_price REAL,
+                    tick_size REAL,
+                    lot_size INTEGER,
+                    instrument_type TEXT,
                     segment TEXT,
-                    name TEXT
+                    exchange TEXT
                 )
             ''', commit=True)
 
@@ -361,44 +366,34 @@ class DatabaseManager:
     def store_option_chain(self, symbol, option_chain_df, date=None):
         with self._lock:
             with self as db:
-                # If date is provided, use it for deletion scope
                 date_str = date if date else datetime.now().strftime('%Y-%m-%d')
-
                 try:
                     df_to_insert = option_chain_df.copy()
                     df_to_insert['symbol'] = symbol
-
                     if 'timestamp' not in df_to_insert.columns:
                          target_date = datetime.strptime(date_str, '%Y-%m-%d')
                          df_to_insert['timestamp'] = target_date.strftime('%Y-%m-%d %H:%M:%S')
 
-                    # Ensure timestamp is string for DB comparison and normalized
                     df_to_insert = self._normalize_df_timestamps(df_to_insert)
-
-                    # Use temp table for merging
                     df_to_insert.to_sql('temp_option_chain', db.conn, if_exists='replace', index=False)
 
                     cols = ['symbol', 'timestamp', 'strike', 'expiry', 'call_oi_chg', 'put_oi_chg',
                             'call_instrument_key', 'put_instrument_key', 'call_oi', 'put_oi',
                             'call_ltp', 'put_ltp', 'call_volume', 'put_volume',
-                            'call_instrument_key', 'put_instrument_key', 'call_oi', 'put_oi',
-                            'call_ltp', 'put_ltp', 'call_iv', 'put_iv', 'call_delta', 'put_delta',
+                            'call_iv', 'put_iv', 'call_delta', 'put_delta',
                             'call_theta', 'put_theta', 'call_trend', 'put_trend']
                     actual_cols = [c for c in cols if c in df_to_insert.columns]
 
-                    # Compatible Upsert for option_chain_data
-                    update_query = f"""
-                        UPDATE option_chain_data
-                        SET {", ".join([f"{c} = (SELECT t.{c} FROM temp_option_chain t WHERE t.symbol = option_chain_data.symbol AND t.timestamp = option_chain_data.timestamp AND t.strike = option_chain_data.strike)" for c in actual_cols if c not in ['symbol', 'timestamp', 'strike']])}
-                        WHERE EXISTS (SELECT 1 FROM temp_option_chain t WHERE t.symbol = option_chain_data.symbol AND t.timestamp = option_chain_data.timestamp AND t.strike = option_chain_data.strike)
-                    """
-                    db.conn.execute(update_query)
+                    # Efficient UPSERT using INSERT ... ON CONFLICT (Requires SQLite 3.24+)
+                    cols_to_update = [c for c in actual_cols if c not in ['symbol', 'timestamp', 'strike']]
+                    update_clause = ", ".join([f"{c} = excluded.{c}" for c in cols_to_update])
 
-                    insert_query = f"""
-                        INSERT OR IGNORE INTO option_chain_data ({', '.join(actual_cols)})
+                    upsert_query = f"""
+                        INSERT INTO option_chain_data ({', '.join(actual_cols)})
                         SELECT {', '.join(actual_cols)} FROM temp_option_chain
+                        ON CONFLICT(symbol, timestamp, strike) DO UPDATE SET {update_clause}
                     """
-                    db.conn.execute(insert_query)
+                    db.conn.execute(upsert_query)
                     db.conn.commit()
                 except Exception as e:
                     print(f"Error storing option chain for {symbol}: {e}")
@@ -417,9 +412,38 @@ class DatabaseManager:
             return pd.read_sql_query(query, db.conn)
 
     def store_instrument_master(self, df):
+        """
+        Stores instrument master data using an efficient UPSERT.
+        """
         with self._lock:
             with self as db:
-                df.to_sql('instrument_master', db.conn, if_exists='replace', index=False)
+                try:
+                    df.to_sql('temp_instrument_master', db.conn, if_exists='replace', index=False)
+
+                    cursor = db.conn.cursor()
+                    cursor.execute("PRAGMA table_info(instrument_master)")
+                    target_cols = [info[1] for info in cursor.fetchall()]
+                    cursor.execute("PRAGMA table_info(temp_instrument_master)")
+                    source_cols = [info[1] for info in cursor.fetchall()]
+                    common_cols = [c for c in target_cols if c in source_cols]
+
+                    if not common_cols: return
+
+                    cols_to_update = [c for c in common_cols if c != 'instrument_key']
+                    update_clause = ", ".join([f"{c} = excluded.{c}" for c in cols_to_update])
+
+                    upsert_query = f"""
+                        INSERT INTO instrument_master ({', '.join(common_cols)})
+                        SELECT {', '.join(common_cols)} FROM temp_instrument_master
+                        ON CONFLICT(instrument_key) DO UPDATE SET {update_clause}
+                    """
+                    db.conn.execute(upsert_query)
+                    db.conn.commit()
+                except Exception as e:
+                    print(f"[DatabaseManager] Error storing instrument master: {e}")
+                    db.conn.rollback()
+                finally:
+                    db.conn.execute("DROP TABLE IF EXISTS temp_instrument_master")
 
     def store_holidays(self, holiday_list):
         with self._lock:
@@ -455,18 +479,15 @@ class DatabaseManager:
                     # filter columns that exist in df
                     actual_cols = [c for c in cols if c in df_to_insert.columns]
 
-                    update_query = f"""
-                        UPDATE market_stats
-                        SET {", ".join([f"{c} = (SELECT t.{c} FROM temp_market_stats t WHERE t.symbol = market_stats.symbol AND t.timestamp = market_stats.timestamp)" for c in actual_cols if c not in ['symbol', 'timestamp']])}
-                        WHERE EXISTS (SELECT 1 FROM temp_market_stats t WHERE t.symbol = market_stats.symbol AND t.timestamp = market_stats.timestamp)
-                    """
-                    db.conn.execute(update_query)
+                    cols_to_update = [c for c in actual_cols if c not in ['symbol', 'timestamp']]
+                    update_clause = ", ".join([f"{c} = excluded.{c}" for c in cols_to_update])
 
-                    insert_query = f"""
-                        INSERT OR IGNORE INTO market_stats ({', '.join(actual_cols)})
+                    upsert_query = f"""
+                        INSERT INTO market_stats ({', '.join(actual_cols)})
                         SELECT {', '.join(actual_cols)} FROM temp_market_stats
+                        ON CONFLICT(symbol, timestamp) DO UPDATE SET {update_clause}
                     """
-                    db.conn.execute(insert_query)
+                    db.conn.execute(upsert_query)
                     db.conn.commit()
                 except Exception as e:
                     print(f"Error storing market stats for {symbol}: {e}")
