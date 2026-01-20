@@ -15,3 +15,13 @@ config.json
 .env
 venv/
 ENV/
+python_engine/utils/__pycache__/math_engine.cpython-312.pyc
+*/__pycache__/*.pyc
+*.pyc
+__pycache__/
+*.db
+*.gz
+*.log
+*.sqlite3
+*.zip
+
