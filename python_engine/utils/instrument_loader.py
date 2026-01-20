@@ -1,0 +1,143 @@
+import pandas as pd
+import requests
+import gzip
+import io
+
+from datetime import datetime
+
+class InstrumentLoader:
+    def get_upstox_instruments(self, symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY": 0, "BANKNIFTY": 0}, target_date=None):
+        # 1. Load Instrument Master (from cache if available)
+        cache_file = "upstox_instruments.json.gz"
+        import os
+        import time
+        cache_age_seconds = 24 * 60 * 60
+
+        content = None
+        if os.path.exists(cache_file) and (time.time() - os.path.getmtime(cache_file)) < cache_age_seconds:
+            try:
+                with open(cache_file, "rb") as f: content = f.read()
+            except: pass
+
+        if not content:
+            url = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+            try:
+                print(f"[InstrumentLoader] Downloading instrument master from {url}...")
+                response = requests.get(url, timeout=60)
+                content = response.content
+                with open(cache_file, "wb") as f: f.write(content)
+            except Exception as e:
+                print(f"[InstrumentLoader] Download failed: {e}")
+                if os.path.exists(cache_file):
+                    with open(cache_file, "rb") as f: content = f.read()
+
+        if not content:
+            print("[InstrumentLoader] ERROR: Could not get instrument master")
+            return {}
+
+        with gzip.GzipFile(fileobj=io.BytesIO(content)) as f:
+            df = pd.read_json(f)
+
+        full_mapping = {}
+
+        for symbol in symbols:
+            # Map simplified symbol 'NIFTY' to Upstox name 'Nifty 50'
+            # NOTE: ExtractInstrumentKeys.py uses 'name' == 'NIFTY' for options, NOT 'Nifty 50'
+            # search_name = "Nifty 50" if symbol == "NIFTY" else "Nifty Bank" if symbol == "BANKNIFTY" else symbol
+
+            spot = spot_prices.get(symbol)
+
+            # --- 1. Current Month Future ---
+            # Future names are typically "NIFTY" or "BANKNIFTY" in the JSON, NOT "Nifty 50"
+            # We need to check both or assume standard abbreviations for Futures vs Indices
+            # Based on DB dump: "NIFTY FUT..." comes from name="NIFTY" (likely) or just matched on trading symbol.
+            # Let's try matching name against the input symbol first for Futures, as they often match "NIFTY" / "BANKNIFTY"
+
+            fut_df = df[(df['name'] == symbol) & (df['instrument_type'] == 'FUT')].sort_values(by='expiry')
+
+            try:
+                current_fut_key = fut_df.iloc[0]['instrument_key']
+            except IndexError:
+                print(f"Warning: No future found for {symbol}. Skipping.")
+                continue
+
+            # --- 2. Nearest Expiry Options ---
+            # Options for Nifty are under 'Nifty 50'
+            opt_df = df[(df['name'] == symbol) & (df['instrument_type'].isin(['CE', 'PE']))].copy()
+
+            if opt_df.empty:
+                print(f"[InstrumentLoader] ERROR: No options found for {search_name}. DF Shape: {df.shape}")
+                print(f"[InstrumentLoader] Unique Names in DF: {df['name'].unique()[:20]}")
+                continue
+
+            # Ensure expiry is in datetime format for accurate sorting
+            opt_df['expiry'] = pd.to_datetime(opt_df['expiry'], origin='unix', unit='ms')
+
+            # Filter for expiries >= target_date
+            if target_date is None:
+                target_date = datetime.now()
+            elif isinstance(target_date, str):
+                target_date = pd.to_datetime(target_date)
+            elif isinstance(target_date, datetime):
+                pass
+            else:
+                # Handle date objects
+                target_date = pd.to_datetime(str(target_date))
+
+            # Strip time for comparison
+            target_date_only = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            valid_opts = opt_df[opt_df['expiry'].dt.date >= target_date_only.date()]
+
+            if valid_opts.empty:
+                print(f"[InstrumentLoader] No valid expiries found for {symbol} on/after {target_date_only.date()}. Using all.")
+                valid_opts = opt_df
+
+            nearest_expiry = valid_opts['expiry'].min()
+            near_opt_df = valid_opts[valid_opts['expiry'] == nearest_expiry]
+
+            # --- 3. Identify the 11 Strikes (5 OTM, 1 ATM, 5 ITM) ---
+            unique_strikes = sorted(near_opt_df['strike_price'].unique())
+
+            # Find ATM strike
+            if spot is None or spot <= 0:
+                # If spot is unknown, pick the middle strike as a placeholder
+                atm_index = len(unique_strikes) // 2
+                atm_strike = unique_strikes[atm_index]
+            else:
+                atm_strike = min(unique_strikes, key=lambda x: abs(x - spot))
+                atm_index = unique_strikes.index(atm_strike)
+
+            # Slice range: Index - 5 to Index + 5 (Total 11 strikes)
+            start_idx = max(0, atm_index - 5)
+            end_idx = min(len(unique_strikes), atm_index + 6)
+            selected_strikes = unique_strikes[start_idx : end_idx]
+
+            # --- 4. Build Result ---
+            option_keys = []
+            for strike in selected_strikes:
+                try:
+                    ce_key = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'CE')]['instrument_key'].values[0]
+                    ce_trading_symbol = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'CE')]['trading_symbol'].values[0]
+
+                    pe_key = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'PE')]['instrument_key'].values[0]
+                    pe_trading_symbol = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'PE')]['trading_symbol'].values[0]
+                except IndexError:
+                    print(f"Warning: CE or PE key not found for strike {strike} in {symbol}. Skipping.")
+                    continue
+
+                option_keys.append({
+                    "strike": strike,
+                    "ce": ce_key,
+                    "ce_trading_symbol" :ce_trading_symbol,
+                    "pe": pe_key,
+                    "pe_trading_symbol" : pe_trading_symbol
+                })
+
+            full_mapping[symbol] = {
+                "future": current_fut_key,
+                "expiry": nearest_expiry.strftime('%Y-%m-%d'),
+                "options": option_keys,
+                "all_keys": [current_fut_key] + [opt['ce'] for opt in option_keys] + [opt['pe'] for opt in option_keys]
+            }
+
+        return full_mapping

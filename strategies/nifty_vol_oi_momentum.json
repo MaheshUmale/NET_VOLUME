@@ -1,0 +1,39 @@
+{
+  "pattern_id": "NIFTY_VOL_OI_MOMENTUM",
+  "regime_config": {
+    "COMPLETE_BULLISH": { "allow_entry": true },
+    "BULLISH": { "allow_entry": true },
+    "SIDEWAYS": { "allow_entry": false }
+  },
+  "phases": [
+    {
+      "id": "setup",
+      "timeout": 10,
+      "conditions": [
+        "sentiment.net_vol_rsi > 60",
+        "sentiment.volume_pcr < 0.8"
+      ],
+      "capture": {
+        "setup_close": "close"
+      }
+    },
+    {
+      "id": "trigger",
+      "timeout": 3,
+      "conditions": [
+        "close > vars.setup_close",
+        "close > sentiment.oi_wall_above"
+      ],
+      "capture": {
+        "entry_price": "close"
+      }
+    }
+  ],
+  "execution": {
+    "side": "BUY",
+    "entry": "ATM_CALL",
+    "sl": "0.5 * candle.atr",
+    "tp": "1.5 * candle.atr",
+    "option_selection": "ATM"
+  }
+}

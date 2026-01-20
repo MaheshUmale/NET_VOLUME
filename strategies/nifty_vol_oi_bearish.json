@@ -1,0 +1,39 @@
+{
+  "pattern_id": "NIFTY_VOL_OI_BEARISH",
+  "regime_config": {
+    "COMPLETE_BEARISH": { "allow_entry": true },
+    "BEARISH": { "allow_entry": true },
+    "SIDEWAYS": { "allow_entry": false }
+  },
+  "phases": [
+    {
+      "id": "setup",
+      "timeout": 10,
+      "conditions": [
+        "sentiment.net_vol_rsi < 40",
+        "sentiment.volume_pcr > 1.2"
+      ],
+      "capture": {
+        "setup_close": "close"
+      }
+    },
+    {
+      "id": "trigger",
+      "timeout": 3,
+      "conditions": [
+        "close < vars.setup_close",
+        "close < sentiment.oi_wall_below"
+      ],
+      "capture": {
+        "entry_price": "close"
+      }
+    }
+  ],
+  "execution": {
+    "side": "BUY",
+    "entry": "ATM_PUT",
+    "sl": "0.5 * candle.atr",
+    "tp": "1.5 * candle.atr",
+    "option_selection": "ATM"
+  }
+}
