@@ -391,6 +391,7 @@ class DatabaseManager:
                     upsert_query = f"""
                         INSERT INTO option_chain_data ({', '.join(actual_cols)})
                         SELECT {', '.join(actual_cols)} FROM temp_option_chain
+                        WHERE 1=1
                         ON CONFLICT(symbol, timestamp, strike) DO UPDATE SET {update_clause}
                     """
                     db.conn.execute(upsert_query)
@@ -435,6 +436,7 @@ class DatabaseManager:
                     upsert_query = f"""
                         INSERT INTO instrument_master ({', '.join(common_cols)})
                         SELECT {', '.join(common_cols)} FROM temp_instrument_master
+                        WHERE 1=1
                         ON CONFLICT(instrument_key) DO UPDATE SET {update_clause}
                     """
                     db.conn.execute(upsert_query)
@@ -485,6 +487,7 @@ class DatabaseManager:
                     upsert_query = f"""
                         INSERT INTO market_stats ({', '.join(actual_cols)})
                         SELECT {', '.join(actual_cols)} FROM temp_market_stats
+                        WHERE 1=1
                         ON CONFLICT(symbol, timestamp) DO UPDATE SET {update_clause}
                     """
                     db.conn.execute(upsert_query)

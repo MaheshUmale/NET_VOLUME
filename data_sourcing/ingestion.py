@@ -86,14 +86,8 @@ class IngestionManager:
                 logger.info(f"    - Syncing Full-Day Option Chain snapshots (Trendlyne)...")
                 try:
                     from backfill_trendlyne import run_backfill
-                    prefix = "NIFTY" if "NIFTY" in canonical_symbol.upper() and "BANK" not in canonical_symbol.upper() else "BANKNIFTY"
-                    run_backfill(symbols_list=[prefix], full_run=True, date_override=date_str)
-
-                    # Ensure all ingestion uses the standardized canonical symbol
-                    with self.db_manager as ctx:
-                        ctx.conn.execute("INSERT OR REPLACE INTO option_chain_data (symbol, timestamp, strike, expiry, call_oi_chg, put_oi_chg, call_instrument_key, put_instrument_key, call_oi, put_oi) "
-                                      "SELECT ?, timestamp, strike, expiry, call_oi_chg, put_oi_chg, call_instrument_key, put_instrument_key, call_oi, put_oi FROM option_chain_data WHERE symbol = ?", (canonical_symbol, prefix))
-                        ctx.conn.commit()
+                    # run_backfill already uses SymbolMaster to resolve canonical symbols for storage
+                    run_backfill(symbols_list=[canonical_symbol], full_run=True, date_override=date_str)
                 except Exception as e:
                     logger.error(f"    - run_backfill failed: {e}")
             else:

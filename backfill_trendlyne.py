@@ -101,9 +101,13 @@ def backfill_from_trendlyne(db_manager, symbol, stock_id, expiry_date_str, times
                 "put_oi": p_oi,
                 "call_oi_chg": int(strike_data.get('callOiChange', 0)),
                 "put_oi_chg": int(strike_data.get('putOiChange', 0)),
+                "call_volume": int(strike_data.get('callVol', 0)),
+                "put_volume": int(strike_data.get('putVol', 0)),
+                "call_ltp": float(strike_data.get('callLtp', 0)),
+                "put_ltp": float(strike_data.get('putLtp', 0)),
                 "call_instrument_key": "", # Trendlyne doesn't give this
                 "put_instrument_key": "",
-                "expiry": expiry_date_str # CRITICAL: Needed for ATM resolution
+                "expiry": expiry_date_str
             })
 
         if chain:
