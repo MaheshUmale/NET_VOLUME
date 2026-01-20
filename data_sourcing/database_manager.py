@@ -122,10 +122,17 @@ class DatabaseManager:
             # Create instrument_master table
             self._execute_query('''
                 CREATE TABLE IF NOT EXISTS instrument_master (
-                    trading_symbol TEXT PRIMARY KEY,
-                    instrument_key TEXT,
+                    instrument_key TEXT PRIMARY KEY,
+                    trading_symbol TEXT,
+                    name TEXT,
+                    last_trading_date TEXT,
+                    expiry TEXT,
+                    strike_price REAL,
+                    tick_size REAL,
+                    lot_size INTEGER,
+                    instrument_type TEXT,
                     segment TEXT,
-                    name TEXT
+                    exchange TEXT
                 )
             ''', commit=True)
 
@@ -417,9 +424,50 @@ class DatabaseManager:
             return pd.read_sql_query(query, db.conn)
 
     def store_instrument_master(self, df):
+        """
+        Stores instrument master data.
+        Uses a temporary table to perform an UPSERT-like operation to keep the table clean.
+        """
         with self._lock:
             with self as db:
-                df.to_sql('instrument_master', db.conn, if_exists='replace', index=False)
+                try:
+                    # 1. Create temporary table with the new data
+                    df.to_sql('temp_instrument_master', db.conn, if_exists='replace', index=False)
+
+                    # 2. Get columns that exist in both the target table and the new data
+                    cursor = db.conn.cursor()
+                    cursor.execute("PRAGMA table_info(instrument_master)")
+                    target_cols = [info[1] for info in cursor.fetchall()]
+
+                    cursor.execute("PRAGMA table_info(temp_instrument_master)")
+                    source_cols = [info[1] for info in cursor.fetchall()]
+
+                    common_cols = [c for c in target_cols if c in source_cols]
+
+                    if not common_cols:
+                        return
+
+                    # 3. Update existing records
+                    set_clause = ", ".join([f"{c} = (SELECT t.{c} FROM temp_instrument_master t WHERE t.instrument_key = instrument_master.instrument_key)" for c in common_cols if c != 'instrument_key'])
+                    update_query = f"""
+                        UPDATE instrument_master
+                        SET {set_clause}
+                        WHERE EXISTS (SELECT 1 FROM temp_instrument_master t WHERE t.instrument_key = instrument_master.instrument_key)
+                    """
+                    db.conn.execute(update_query)
+
+                    # 4. Insert new records
+                    insert_query = f"""
+                        INSERT OR IGNORE INTO instrument_master ({', '.join(common_cols)})
+                        SELECT {', '.join(common_cols)} FROM temp_instrument_master
+                    """
+                    db.conn.execute(insert_query)
+                    db.conn.commit()
+                except Exception as e:
+                    print(f"[DatabaseManager] Error storing instrument master: {e}")
+                    db.conn.rollback()
+                finally:
+                    db.conn.execute("DROP TABLE IF EXISTS temp_instrument_master")
 
     def store_holidays(self, holiday_list):
         with self._lock:

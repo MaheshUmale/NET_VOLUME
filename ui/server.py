@@ -14,6 +14,7 @@ from data_sourcing.data_manager import DataManager
 from data_sourcing.database_manager import DatabaseManager
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="ui/static"), name="static")
 templates = Jinja2Templates(directory="ui/templates")
 
 # Initialize shared resources
