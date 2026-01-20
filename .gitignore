@@ -1,3 +1,20 @@
+__pycache__/
+*.py[cod]
+*.class
+.pytest_cache/
+.DS_Store
+
+# Data & DBs
+*.db
+*.json.gz
+*.csv
+*.log
+
+# Environment
+config.json
+.env
+venv/
+ENV/
 python_engine/utils/__pycache__/math_engine.cpython-312.pyc
 */__pycache__/*.pyc
 *.pyc
